@@ -1,0 +1,58 @@
+version: '3.8'
+
+services:
+  benchlabd:
+    build: .
+    image: benchlab/benchlab-service:latest
+    container_name: benchlabd
+    restart: unless-stopped
+
+    # Device passthrough - allows container to access USB devices
+    devices:
+      - /dev/ttyACM0:/dev/ttyACM0  # Adjust device path as needed
+
+    # Alternative: privileged mode (less secure, but works with dynamic device paths)
+    # privileged: true
+
+    ports:
+      - "8080:8080"
+
+    environment:
+      # Bind to all interfaces in container (reverse proxy should handle external access)
+      - BENCHLAB_BIND_ADDRESS=http://0.0.0.0:8080
+
+      # Set API key for authentication (CHANGE THIS!)
+      - BENCHLAB_API_KEY=${BENCHLAB_API_KEY:-change-me-in-production}
+
+      # Timeouts
+      - BENCHLAB_DISCOVERY_TIMEOUT_MS=600
+      - BENCHLAB_COMMAND_TIMEOUT_MS=500
+
+      # .NET runtime settings
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      - DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
+
+    # Volume mounts for device access
+    volumes:
+      - /dev:/dev:ro  # Read-only access to /dev for discovery
+      - /run/udev:/run/udev:ro  # udev info
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+    networks:
+      - benchlab
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  benchlab:
+    driver: bridge

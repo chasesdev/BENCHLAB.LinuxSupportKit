@@ -1,0 +1,42 @@
+#!/bin/sh
+# postrm script for benchlabd
+set -e
+
+case "$1" in
+    purge)
+        # Remove system user on purge
+        if getent passwd benchlab >/dev/null; then
+            deluser --system benchlab || true
+        fi
+
+        # Remove group if it exists and is empty
+        if getent group benchlab >/dev/null; then
+            delgroup --system benchlab 2>/dev/null || true
+        fi
+
+        # Clean up any leftover configuration files
+        rm -rf /etc/benchlab 2>/dev/null || true
+        rm -rf /var/lib/benchlab 2>/dev/null || true
+        rm -rf /var/log/benchlab 2>/dev/null || true
+        ;;
+
+    remove)
+        # Disable service on remove
+        if [ -d /run/systemd/system ]; then
+            systemctl disable benchlabd.service 2>/dev/null || true
+            systemctl daemon-reload || true
+        fi
+        ;;
+
+    upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        ;;
+
+    *)
+        echo "postrm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

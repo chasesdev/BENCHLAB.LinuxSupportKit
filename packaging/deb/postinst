@@ -1,8 +1,52 @@
 #!/bin/sh
+# postinst script for benchlabd
 set -e
-adduser --system --group --no-create-home benchlab || true
-install -d -o root -g root /opt/benchlab
-cp -r /usr/lib/benchlabd/* /opt/benchlab/ || true
-cp /usr/lib/benchlabd/benchlab.service /etc/systemd/system/benchlab.service || true
-systemctl daemon-reload
-systemctl enable benchlab.service || true
+
+case "$1" in
+    configure)
+        # Create system user for benchlabd service
+        if ! getent passwd benchlab >/dev/null; then
+            adduser --system --group --no-create-home --home /nonexistent \
+                --gecos "BenchLab Service" benchlab
+        fi
+
+        # Add benchlab user to dialout group for serial port access
+        usermod -a -G dialout benchlab 2>/dev/null || true
+
+        # Set permissions on binaries
+        chmod 755 /usr/bin/benchlab-cli || true
+        chmod 755 /usr/bin/benchlabd || true
+
+        # Reload udev rules
+        if [ -x /sbin/udevadm ]; then
+            udevadm control --reload-rules || true
+            udevadm trigger --subsystem-match=tty || true
+        fi
+
+        # Reload systemd and enable service
+        if [ -d /run/systemd/system ]; then
+            systemctl daemon-reload || true
+            systemctl enable benchlabd.service || true
+
+            # Start service if this is an initial install
+            if [ -z "$2" ]; then
+                systemctl start benchlabd.service || true
+            else
+                # Restart service if upgrading
+                systemctl restart benchlabd.service || true
+            fi
+        fi
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

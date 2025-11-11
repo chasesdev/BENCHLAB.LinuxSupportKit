@@ -1,0 +1,24 @@
+#!/bin/sh
+# prerm script for benchlabd
+set -e
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        # Stop the service before removal/upgrade
+        if [ -d /run/systemd/system ] && [ -x /bin/systemctl ]; then
+            systemctl stop benchlabd.service || true
+        fi
+        ;;
+
+    failed-upgrade)
+        ;;
+
+    *)
+        echo "prerm called with unknown argument \`$1'" >&2
+        exit 1
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

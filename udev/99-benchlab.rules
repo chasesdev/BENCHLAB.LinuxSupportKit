@@ -1,4 +1,28 @@
-# BenchLab STM32 VCP (0483:5740) - permissions + stable symlink + ModemManager ignore
-SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", \
-  MODE:="0660", GROUP:="dialout", SYMLINK+="benchlab%n", \
-  ENV{ID_MM_DEVICE_IGNORE}="1"
+# udev rules for BenchLab/OPENBENCHTABLE devices
+#
+# These rules identify BenchLab devices and create convenient symlinks
+# Also prevents ModemManager from interfering with the devices
+
+# BenchLab device identification (VID=0x0EEE, PID=0x0010)
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0eee", ATTRS{idProduct}=="0010", \
+    MODE="0666", GROUP="dialout", \
+    SYMLINK+="benchlab%n", \
+    ENV{ID_MM_DEVICE_IGNORE}="1", \
+    TAG+="systemd", \
+    TAG+="uaccess"
+
+# Prevent ModemManager from probing BenchLab devices
+ACTION=="add|change", SUBSYSTEM=="usb", \
+    ATTRS{idVendor}=="0eee", ATTRS{idProduct}=="0010", \
+    ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# Alternative detection by serial number pattern (if available)
+# Uncomment if your devices have consistent serial number patterns
+# SUBSYSTEM=="tty", ATTRS{serial}=="BENCHLAB*", \
+#     MODE="0666", GROUP="dialout", \
+#     SYMLINK+="benchlab-%s{serial}", \
+#     ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# Reload systemd to pick up new devices
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="0eee", \
+    RUN+="/bin/systemctl try-restart benchlabd.service"

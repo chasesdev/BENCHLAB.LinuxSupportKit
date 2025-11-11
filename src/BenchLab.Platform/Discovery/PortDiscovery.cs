@@ -39,13 +39,23 @@ public sealed class PortDiscovery
                     var full = Path.GetFullPath(link);
                     candidates.Add(full);
                 }
-                catch { /* ignore */ }
+                catch (Exception ex)
+                {
+                    _log?.LogWarning(ex, "Failed to resolve symlink {Link}", link);
+                }
             }
         }
 
         // Fallback to ttyACM*
-        foreach (var dev in Directory.EnumerateFiles("/dev", "ttyACM*"))
-            candidates.Add(dev);
+        try
+        {
+            foreach (var dev in Directory.EnumerateFiles("/dev", "ttyACM*"))
+                candidates.Add(dev);
+        }
+        catch (Exception ex)
+        {
+            _log?.LogWarning(ex, "Failed to enumerate /dev/ttyACM* devices");
+        }
 
         foreach (var dev in candidates.Distinct())
         {

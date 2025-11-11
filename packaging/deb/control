@@ -3,6 +3,17 @@ Version: 0.1.0
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: BenchLab Linux Maintainers
-Description: BenchLab Service for Ubuntu LTS
- BenchLab HTTP service to stream serial telemetry as NDJSON.
+Depends: systemd
+Maintainer: BenchLab Linux Maintainers <support@benchlab.io>
+Description: BenchLab Linux support service and CLI tools
+ Provides HTTP REST API and CLI tools for BenchLab/OPENBENCHTABLE devices.
+ .
+ Features:
+  - Device discovery and identification
+  - Real-time sensor telemetry streaming
+  - Fan profile configuration
+  - RGB LED control
+  - Calibration management
+  - Prometheus metrics export
+ .
+ Includes benchlab-cli command-line tool and benchlabd HTTP service.

@@ -1,0 +1,36 @@
+[Unit]
+Description=BenchLab HTTP Service
+Documentation=https://github.com/benchlab-io/benchlab-linux-support
+After=network.target
+
+[Service]
+Type=notify
+User=benchlab
+Group=benchlab
+WorkingDirectory=/usr/bin
+ExecStart=/usr/bin/benchlabd
+Restart=on-failure
+RestartSec=5
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/benchlab
+
+# Resource limits
+LimitNOFILE=1024
+TasksMax=256
+
+# Environment
+Environment="BENCHLAB_BIND_ADDRESS=http://127.0.0.1:8080"
+Environment="BENCHLAB_DISCOVERY_TIMEOUT_MS=600"
+Environment="BENCHLAB_COMMAND_TIMEOUT_MS=500"
+# Environment="BENCHLAB_API_KEY=your-secret-key-here"
+
+# Allow access to serial ports
+SupplementaryGroups=dialout
+
+[Install]
+WantedBy=multi-user.target

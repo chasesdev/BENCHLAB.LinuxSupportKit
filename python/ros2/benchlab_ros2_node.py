@@ -1,14 +1,15 @@
-# ROS 2 node that subscribes to the BenchLab service NDJSON stream and publishes a sample std_msgs/String
+# ROS 2 node that subscribes to the BenchLab service NDJSON stream and publishes telemetry data
 # Requires: rclpy, requests
 import rclpy
 from rclpy.node import Node
 from std_msgs.msg import String
 import requests
+import json
 
 class BenchLabNode(Node):
     def __init__(self):
         super().__init__('benchlab_ros2')
-        self.pub = self.create_publisher(String, '/benchlab/raw_hex', 10)
+        self.pub = self.create_publisher(String, '/benchlab/telemetry', 10)
         self.timer = self.create_timer(0.1, self.tick)
         self.session = requests.Session()
         self.stream_iter = None

@@ -1,0 +1,186 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ created ]
+
+env:
+  DOTNET_VERSION: '8.0.x'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 1
+  DOTNET_NOLOGO: true
+
+jobs:
+  build-and-test:
+    name: Build and Test
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build
+      run: dotnet build --configuration Release --no-restore
+
+    - name: Run tests
+      run: dotnet test --configuration Release --no-build --verbosity normal --collect:"XPlat Code Coverage"
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v4
+      with:
+        files: '**/coverage.cobertura.xml'
+        fail_ci_if_error: false
+
+  publish-binaries:
+    name: Publish Release Binaries
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'release'
+
+    strategy:
+      matrix:
+        runtime: [linux-x64, linux-arm64]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Publish CLI (${{ matrix.runtime }})
+      run: |
+        dotnet publish src/BenchLab.Cli/BenchLab.Cli.csproj \
+          -c Release \
+          -r ${{ matrix.runtime }} \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:PublishTrimmed=true \
+          -p:EnableCompressionInSingleFile=true \
+          -o artifacts/cli-${{ matrix.runtime }}
+
+    - name: Publish Service (${{ matrix.runtime }})
+      run: |
+        dotnet publish src/BenchLab.Service/BenchLab.Service.csproj \
+          -c Release \
+          -r ${{ matrix.runtime }} \
+          --self-contained true \
+          -p:PublishSingleFile=true \
+          -p:PublishTrimmed=true \
+          -p:EnableCompressionInSingleFile=true \
+          -o artifacts/service-${{ matrix.runtime }}
+
+    - name: Create tarball
+      run: |
+        cd artifacts
+        tar czf benchlab-${{ matrix.runtime }}.tar.gz cli-${{ matrix.runtime }} service-${{ matrix.runtime }}
+
+    - name: Upload release artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchlab-${{ matrix.runtime }}
+        path: artifacts/benchlab-${{ matrix.runtime }}.tar.gz
+
+    - name: Upload to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: artifacts/benchlab-${{ matrix.runtime }}.tar.gz
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-debian-package:
+    name: Build Debian Package
+    runs-on: ubuntu-latest
+    needs: build-and-test
+    if: github.event_name == 'release'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: ${{ env.DOTNET_VERSION }}
+
+    - name: Install packaging tools
+      run: sudo apt-get update && sudo apt-get install -y dpkg-dev debhelper
+
+    - name: Publish binaries for packaging
+      run: |
+        dotnet publish src/BenchLab.Cli/BenchLab.Cli.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o packaging/deb/usr/bin
+        dotnet publish src/BenchLab.Service/BenchLab.Service.csproj -c Release -r linux-x64 --self-contained true -p:PublishSingleFile=true -o packaging/deb/usr/bin
+
+    - name: Build .deb package
+      run: |
+        cd packaging/deb
+        dpkg-deb --build . ../../benchlab_1.0.0_amd64.deb || echo "Note: dpkg-deb may show warnings, check if .deb was created"
+
+    - name: Upload Debian package
+      uses: actions/upload-artifact@v4
+      with:
+        name: benchlab-deb
+        path: benchlab_*.deb
+
+    - name: Upload to release
+      uses: softprops/action-gh-release@v1
+      with:
+        files: benchlab_*.deb
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  docker-build:
+    name: Build Docker Images
+    runs-on: ubuntu-latest
+    needs: build-and-test
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to GitHub Container Registry
+      if: github.event_name == 'release'
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Extract metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: ghcr.io/${{ github.repository }}
+        tags: |
+          type=semver,pattern={{version}}
+          type=semver,pattern={{major}}.{{minor}}
+          type=sha
+          type=raw,value=latest,enable={{is_default_branch}}
+
+    - name: Build and push
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: ${{ github.event_name == 'release' }}
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
