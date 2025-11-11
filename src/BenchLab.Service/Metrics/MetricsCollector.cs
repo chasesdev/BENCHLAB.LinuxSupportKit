@@ -1,145 +1,127 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text;
 
 namespace BenchLab.Service.Metrics;
 
 /// <summary>
-/// Thread-safe metrics collector for Prometheus-compatible metrics export.
+/// Lock-free thread-safe metrics collector for Prometheus-compatible metrics export.
+/// Uses concurrent collections and Interlocked operations for high-performance concurrent access.
 /// Tracks HTTP requests, device operations, protocol commands, and device telemetry.
 /// </summary>
 public sealed class MetricsCollector
 {
-    private readonly object _lock = new();
     private readonly Stopwatch _uptimeStopwatch = Stopwatch.StartNew();
 
-    // HTTP Metrics
+    // HTTP Metrics - Lock-free counters
     private long _totalRequests;
-    private readonly Dictionary<string, long> _requestsByEndpoint = new();
-    private readonly Dictionary<string, long> _requestsByStatus = new();
-    private readonly Dictionary<string, List<double>> _requestDurations = new();
+    private readonly ConcurrentDictionary<string, long> _requestsByEndpoint = new();
+    private readonly ConcurrentDictionary<string, long> _requestsByStatus = new();
+    private readonly ConcurrentDictionary<string, ConcurrentBag<double>> _requestDurations = new();
 
-    // Device Metrics
+    // Device Metrics - Interlocked updates
     private long _devicesDiscovered;
     private long _devicesOnline;
     private long _devicesOffline;
 
-    // Protocol Metrics
+    // Protocol Metrics - Lock-free
     private long _totalProtocolCommands;
-    private readonly Dictionary<string, long> _commandsByType = new();
+    private readonly ConcurrentDictionary<string, long> _commandsByType = new();
     private long _protocolErrors;
 
-    // Stream Metrics
+    // Stream Metrics - Interlocked operations
     private long _activeStreams;
     private long _totalBytesTransmitted;
     private long _streamErrors;
 
-    // Device Telemetry (latest values)
-    private readonly Dictionary<string, double> _latestTemperatures = new();
-    private readonly Dictionary<string, double> _latestPowerReadings = new();
-    private readonly Dictionary<string, int> _latestFanSpeeds = new();
-    private readonly Dictionary<string, DateTime> _lastSuccessfulRead = new();
+    // Device Telemetry (latest values) - Concurrent dictionaries
+    private readonly ConcurrentDictionary<string, double> _latestTemperatures = new();
+    private readonly ConcurrentDictionary<string, double> _latestPowerReadings = new();
+    private readonly ConcurrentDictionary<string, int> _latestFanSpeeds = new();
+    private readonly ConcurrentDictionary<string, DateTime> _lastSuccessfulRead = new();
 
     public void RecordRequest(string endpoint, int statusCode, TimeSpan duration)
     {
-        lock (_lock)
-        {
-            _totalRequests++;
-            _requestsByEndpoint.TryGetValue(endpoint, out var count);
-            _requestsByEndpoint[endpoint] = count + 1;
+        // Lock-free using Interlocked and ConcurrentDictionary
+        Interlocked.Increment(ref _totalRequests);
+        _requestsByEndpoint.AddOrUpdate(endpoint, 1, (_, count) => count + 1);
 
-            var statusKey = statusCode.ToString();
-            _requestsByStatus.TryGetValue(statusKey, out var statusCount);
-            _requestsByStatus[statusKey] = statusCount + 1;
+        var statusKey = statusCode.ToString();
+        _requestsByStatus.AddOrUpdate(statusKey, 1, (_, count) => count + 1);
 
-            if (!_requestDurations.ContainsKey(endpoint))
-                _requestDurations[endpoint] = new List<double>();
-            _requestDurations[endpoint].Add(duration.TotalSeconds);
-        }
+        var durations = _requestDurations.GetOrAdd(endpoint, _ => new ConcurrentBag<double>());
+        durations.Add(duration.TotalSeconds);
     }
 
     public void RecordDeviceDiscovery(int total, int online)
     {
-        lock (_lock)
-        {
-            _devicesDiscovered = total;
-            _devicesOnline = online;
-            _devicesOffline = total - online;
-        }
+        // Lock-free using Interlocked.Exchange
+        Interlocked.Exchange(ref _devicesDiscovered, total);
+        Interlocked.Exchange(ref _devicesOnline, online);
+        Interlocked.Exchange(ref _devicesOffline, total - online);
     }
 
     public void RecordProtocolCommand(string commandName, bool success)
     {
-        lock (_lock)
-        {
-            _totalProtocolCommands++;
-            _commandsByType.TryGetValue(commandName, out var count);
-            _commandsByType[commandName] = count + 1;
+        // Lock-free using Interlocked and ConcurrentDictionary
+        Interlocked.Increment(ref _totalProtocolCommands);
+        _commandsByType.AddOrUpdate(commandName, 1, (_, count) => count + 1);
 
-            if (!success)
-                _protocolErrors++;
-        }
+        if (!success)
+            Interlocked.Increment(ref _protocolErrors);
     }
 
     public void RecordStreamStart()
     {
-        lock (_lock)
-        {
-            _activeStreams++;
-        }
+        Interlocked.Increment(ref _activeStreams);
     }
 
     public void RecordStreamEnd(long bytesTransmitted, bool hadError)
     {
-        lock (_lock)
-        {
-            _activeStreams--;
-            _totalBytesTransmitted += bytesTransmitted;
-            if (hadError)
-                _streamErrors++;
-        }
+        Interlocked.Decrement(ref _activeStreams);
+        Interlocked.Add(ref _totalBytesTransmitted, bytesTransmitted);
+        if (hadError)
+            Interlocked.Increment(ref _streamErrors);
     }
 
     public void RecordDeviceTelemetry(string device, double? chipTemp, double? ambientTemp,
         double? power, int[]? fanRpms)
     {
-        lock (_lock)
+        // Lock-free using ConcurrentDictionary
+        if (chipTemp.HasValue)
+            _latestTemperatures[$"{device}_chip"] = chipTemp.Value;
+
+        if (ambientTemp.HasValue)
+            _latestTemperatures[$"{device}_ambient"] = ambientTemp.Value;
+
+        if (power.HasValue)
+            _latestPowerReadings[device] = power.Value;
+
+        if (fanRpms != null)
         {
-            if (chipTemp.HasValue)
-                _latestTemperatures[$"{device}_chip"] = chipTemp.Value;
-
-            if (ambientTemp.HasValue)
-                _latestTemperatures[$"{device}_ambient"] = ambientTemp.Value;
-
-            if (power.HasValue)
-                _latestPowerReadings[device] = power.Value;
-
-            if (fanRpms != null)
-            {
-                for (int i = 0; i < fanRpms.Length; i++)
-                    _latestFanSpeeds[$"{device}_fan{i}"] = fanRpms[i];
-            }
-
-            _lastSuccessfulRead[device] = DateTime.UtcNow;
+            for (int i = 0; i < fanRpms.Length; i++)
+                _latestFanSpeeds[$"{device}_fan{i}"] = fanRpms[i];
         }
+
+        _lastSuccessfulRead[device] = DateTime.UtcNow;
     }
 
     public string ExportPrometheusFormat()
     {
-        lock (_lock)
-        {
-            var sb = new StringBuilder();
+        // Lock-free export using concurrent collections and Interlocked reads
+        var sb = new StringBuilder();
 
-            // Service uptime
-            sb.AppendLine("# HELP benchlab_uptime_seconds Service uptime in seconds");
-            sb.AppendLine("# TYPE benchlab_uptime_seconds counter");
-            sb.AppendLine($"benchlab_uptime_seconds {_uptimeStopwatch.Elapsed.TotalSeconds:F2}");
-            sb.AppendLine();
+        // Service uptime
+        sb.AppendLine("# HELP benchlab_uptime_seconds Service uptime in seconds");
+        sb.AppendLine("# TYPE benchlab_uptime_seconds counter");
+        sb.AppendLine($"benchlab_uptime_seconds {_uptimeStopwatch.Elapsed.TotalSeconds:F2}");
+        sb.AppendLine();
 
-            // Total requests
-            sb.AppendLine("# HELP benchlab_requests_total Total HTTP requests");
-            sb.AppendLine("# TYPE benchlab_requests_total counter");
-            sb.AppendLine($"benchlab_requests_total {_totalRequests}");
-            sb.AppendLine();
+        // Total requests (snapshot with Interlocked.Read)
+        sb.AppendLine("# HELP benchlab_requests_total Total HTTP requests");
+        sb.AppendLine("# TYPE benchlab_requests_total counter");
+        sb.AppendLine($"benchlab_requests_total {Interlocked.Read(ref _totalRequests)}");
+        sb.AppendLine();
 
             // Requests by endpoint
             sb.AppendLine("# HELP benchlab_requests_by_endpoint_total Total HTTP requests by endpoint");
@@ -160,14 +142,13 @@ public sealed class MetricsCollector
             sb.AppendLine("# TYPE benchlab_request_duration_seconds histogram");
             foreach (var kvp in _requestDurations)
             {
-                var durations = kvp.Value.OrderBy(d => d).ToList();
-                if (durations.Count > 0)
+                // Snapshot ConcurrentBag to array for processing
+                var durations = kvp.Value.ToArray();
+                if (durations.Length > 0)
                 {
-                    var p50 = Percentile(durations, 0.5);
-                    var p90 = Percentile(durations, 0.9);
-                    var p99 = Percentile(durations, 0.99);
+                    Array.Sort(durations);
                     var sum = durations.Sum();
-                    var count = durations.Count;
+                    var count = durations.Length;
 
                     sb.AppendLine($"benchlab_request_duration_seconds_bucket{{endpoint=\"{kvp.Key}\",le=\"0.1\"}} {durations.Count(d => d <= 0.1)}");
                     sb.AppendLine($"benchlab_request_duration_seconds_bucket{{endpoint=\"{kvp.Key}\",le=\"0.5\"}} {durations.Count(d => d <= 0.5)}");

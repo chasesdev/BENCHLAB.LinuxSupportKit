@@ -208,11 +208,53 @@ public unsafe struct SensorStruct
     }
 
     /// <summary>
+    /// Fills power sensor readings into a pre-allocated span (zero-allocation version).
+    /// Span must have at least 11 elements.
+    /// </summary>
+    public readonly void FillPowerReadings(Span<PowerSensor> destination)
+    {
+        if (destination.Length < 11)
+            throw new ArgumentException("Destination must have at least 11 elements", nameof(destination));
+
+        destination[0] = Power0;
+        destination[1] = Power1;
+        destination[2] = Power2;
+        destination[3] = Power3;
+        destination[4] = Power4;
+        destination[5] = Power5;
+        destination[6] = Power6;
+        destination[7] = Power7;
+        destination[8] = Power8;
+        destination[9] = Power9;
+        destination[10] = Power10;
+    }
+
+    /// <summary>
     /// Gets fan readings as an array.
     /// </summary>
     public readonly FanSensor[] GetFans()
     {
         return new[] { Fan0, Fan1, Fan2, Fan3, Fan4, Fan5, Fan6, Fan7, Fan8 };
+    }
+
+    /// <summary>
+    /// Fills fan readings into a pre-allocated span (zero-allocation version).
+    /// Span must have at least 9 elements.
+    /// </summary>
+    public readonly void FillFans(Span<FanSensor> destination)
+    {
+        if (destination.Length < 9)
+            throw new ArgumentException("Destination must have at least 9 elements", nameof(destination));
+
+        destination[0] = Fan0;
+        destination[1] = Fan1;
+        destination[2] = Fan2;
+        destination[3] = Fan3;
+        destination[4] = Fan4;
+        destination[5] = Fan5;
+        destination[6] = Fan6;
+        destination[7] = Fan7;
+        destination[8] = Fan8;
     }
 
     /// <summary>
@@ -229,6 +271,24 @@ public unsafe struct SensorStruct
             }
         }
         return voltages;
+    }
+
+    /// <summary>
+    /// Fills voltage inputs into a pre-allocated span (zero-allocation version).
+    /// Span must have at least 13 elements.
+    /// </summary>
+    public readonly void FillVoltages(Span<short> destination)
+    {
+        if (destination.Length < ProtocolConstants.SensorVinCount)
+            throw new ArgumentException($"Destination must have at least {ProtocolConstants.SensorVinCount} elements", nameof(destination));
+
+        fixed (short* ptr = Vin)
+        {
+            for (int i = 0; i < ProtocolConstants.SensorVinCount; i++)
+            {
+                destination[i] = ptr[i];
+            }
+        }
     }
 
     /// <summary>

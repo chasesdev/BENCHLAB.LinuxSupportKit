@@ -355,6 +355,12 @@ app.MapGet("/stream", async (HttpContext ctx, [FromQuery] string? device, [FromQ
         metrics.RecordStreamStart();
         logger.LogInformation("Starting stream from {Device}", devicePath);
 
+        // Pre-allocate reusable buffers outside loop (zero-allocation streaming)
+        var powerBuffer = new PowerSensor[11];
+        var fanBuffer = new FanSensor[9];
+        var voltageBuffer = new short[13];
+        var fanSpeedBuffer = new int[9];
+
         // Stream sensor readings continuously using event-driven async I/O
         while (!ctx.RequestAborted.IsCancellationRequested)
         {
@@ -365,23 +371,34 @@ app.MapGet("/stream", async (HttpContext ctx, [FromQuery] string? device, [FromQ
                     var sensors = await protocol.ReadSensorsAsync(ctx.RequestAborted);
                     metrics.RecordProtocolCommand("ReadSensors", true);
 
-                    var powerReadings = sensors.GetPowerReadings();
-                    var totalPower = powerReadings.Sum(p => p.PowerWatts);
-                    var fanSpeeds = sensors.GetFans().Select(f => f.Tach).ToArray();
+                    // Fill pre-allocated buffers (zero allocation)
+                    sensors.FillPowerReadings(powerBuffer);
+                    sensors.FillFans(fanBuffer);
+                    sensors.FillVoltages(voltageBuffer);
+
+                    // Calculate total power without LINQ
+                    double totalPower = 0;
+                    for (int i = 0; i < powerBuffer.Length; i++)
+                        totalPower += powerBuffer[i].PowerWatts;
+
+                    // Extract fan speeds
+                    for (int i = 0; i < fanBuffer.Length; i++)
+                        fanSpeedBuffer[i] = fanBuffer[i].Tach;
 
                     metrics.RecordDeviceTelemetry(devicePath, sensors.ChipTemperature, sensors.AmbientTemperature,
-                        totalPower, fanSpeeds);
+                        totalPower, fanSpeedBuffer);
 
+                    // Build response data structure (still allocates anonymous object, but reduces intermediate allocations)
                     var data = new
                     {
                         device = devicePath,
                         timestamp = DateTime.UtcNow.ToString("o"),
-                        voltages = sensors.GetVoltages(),
+                        voltages = voltageBuffer,
                         chipTemp = sensors.ChipTemperature,
                         ambientTemp = sensors.AmbientTemperature,
                         humidity = sensors.HumidityPercent,
-                        power = powerReadings.Select(p => new { v = p.VoltageVolts, a = p.CurrentAmps, w = p.PowerWatts }).ToArray(),
-                        fans = sensors.GetFans().Select(f => new { enabled = f.IsEnabled, duty = f.DutyPercent, rpm = f.Tach }).ToArray()
+                        power = BuildPowerArray(powerBuffer),
+                        fans = BuildFanArray(fanBuffer)
                     };
 
                     var json = JsonSerializer.Serialize(data);
@@ -523,3 +540,34 @@ if (bindAddress.Contains("0.0.0.0"))
 app.Run(bindAddress);
 
 record WriteRequest(string Device, string Data);
+
+// Helper methods for streaming optimization
+static object[] BuildPowerArray(PowerSensor[] powerBuffer)
+{
+    var result = new object[powerBuffer.Length];
+    for (int i = 0; i < powerBuffer.Length; i++)
+    {
+        result[i] = new
+        {
+            v = powerBuffer[i].VoltageVolts,
+            a = powerBuffer[i].CurrentAmps,
+            w = powerBuffer[i].PowerWatts
+        };
+    }
+    return result;
+}
+
+static object[] BuildFanArray(FanSensor[] fanBuffer)
+{
+    var result = new object[fanBuffer.Length];
+    for (int i = 0; i < fanBuffer.Length; i++)
+    {
+        result[i] = new
+        {
+            enabled = fanBuffer[i].IsEnabled,
+            duty = fanBuffer[i].DutyPercent,
+            rpm = fanBuffer[i].Tach
+        };
+    }
+    return result;
+}
