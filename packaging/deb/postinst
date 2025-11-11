@@ -1,0 +1,8 @@
+#!/bin/sh
+set -e
+adduser --system --group --no-create-home benchlab || true
+install -d -o root -g root /opt/benchlab
+cp -r /usr/lib/benchlabd/* /opt/benchlab/ || true
+cp /usr/lib/benchlabd/benchlab.service /etc/systemd/system/benchlab.service || true
+systemctl daemon-reload
+systemctl enable benchlab.service || true

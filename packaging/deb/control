@@ -1,0 +1,8 @@
+Package: benchlabd
+Version: 0.1.0
+Section: utils
+Priority: optional
+Architecture: amd64
+Maintainer: BenchLab Linux Maintainers
+Description: BenchLab Service for Ubuntu LTS
+ BenchLab HTTP service to stream serial telemetry as NDJSON.

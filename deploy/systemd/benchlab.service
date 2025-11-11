@@ -1,0 +1,13 @@
+[Unit]
+Description=BenchLab Service (Linux)
+After=network-online.target
+
+[Service]
+ExecStart=/opt/benchlab/benchlabd
+User=benchlab
+Group=dialout
+Restart=on-failure
+Environment=DOTNET_SystemGlobalization_Invariant=1
+
+[Install]
+WantedBy=multi-user.target

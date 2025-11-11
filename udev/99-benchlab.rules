@@ -1,0 +1,4 @@
+# BenchLab STM32 VCP (0483:5740) - permissions + stable symlink + ModemManager ignore
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", \
+  MODE:="0660", GROUP:="dialout", SYMLINK+="benchlab%n", \
+  ENV{ID_MM_DEVICE_IGNORE}="1"
