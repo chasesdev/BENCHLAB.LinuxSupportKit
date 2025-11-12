@@ -1,5 +1,7 @@
 # BenchLab Linux Support Kit
 
+**We're Unofficial. See BenchLab at https://github.com/BenchLab-io/BENCHLAB/**
+
 [![CI/CD](https://github.com/BenchLab-io/BENCHLAB.LinuxSupportKit/actions/workflows/ci.yml/badge.svg)](https://github.com/BenchLab-io/BENCHLAB.LinuxSupportKit/actions)
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![.NET 8.0](https://img.shields.io/badge/.NET-8.0-512BD4)](https://dotnet.microsoft.com/)
