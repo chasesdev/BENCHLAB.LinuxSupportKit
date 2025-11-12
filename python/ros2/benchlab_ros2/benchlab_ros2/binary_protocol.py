@@ -279,6 +279,10 @@ class BinaryProtocol:
     def read_welcome(self) -> str:
         """Read welcome message (CMD 0x00).
 
+        Note: This method provides API completeness (matches C# implementation)
+        but is not used by ROS2 nodes. Use read_vendor_data() instead for
+        device validation, as it provides more comprehensive information.
+
         Returns:
             Welcome string ("BENCHLAB\\x00")
         """

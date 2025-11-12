@@ -480,6 +480,32 @@ with BenchLabClient("http://localhost:8080", api_key="key") as client:
     # Client automatically closed
 ```
 
+### Examples
+
+Comprehensive SDK examples are available in `python/examples/`:
+
+- **`basic_info.py`** - Device discovery and information queries
+- **`stream_sensors.py`** - Real-time telemetry streaming
+- **`fan_control.py`** - Manual and automatic fan control
+- **`rgb_control.py`** - RGB LED color and animation modes
+
+Run examples:
+```bash
+# Device information
+python3 python/examples/basic_info.py
+
+# Stream telemetry data
+python3 python/examples/stream_sensors.py /dev/benchlab0
+
+# Control RGB LEDs
+python3 python/examples/rgb_control.py /dev/benchlab0
+
+# Fan control (manual and auto modes)
+python3 python/examples/fan_control.py /dev/benchlab0
+```
+
+See `python/examples/README.md` for detailed documentation and troubleshooting.
+
 ## 🐳 Docker Deployment
 
 ### Using Docker Compose (Recommended)

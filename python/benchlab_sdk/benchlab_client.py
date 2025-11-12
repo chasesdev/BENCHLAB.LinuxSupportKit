@@ -321,6 +321,106 @@ class BenchLabClient:
         response = self._request('POST', '/write', json=payload)
         return response.json()
 
+    def get_calibration(self, device: str) -> Dict[str, Any]:
+        """
+        Get calibration data from device RAM.
+
+        Args:
+            device: Device path (e.g., "/dev/benchlab0" or "benchlab0")
+
+        Returns:
+            Dictionary with calibration data (voltageOffsets, voltageScales, etc.)
+        """
+        device_id = device.replace('/dev/', '')
+        response = self._request('GET', f'/devices/{device_id}/calibration')
+        return response.json()
+
+    def set_rgb(
+        self,
+        device: str,
+        mode: str,
+        red: int = 0,
+        green: int = 0,
+        blue: int = 0,
+        brightness: int = 128,
+        speed: int = 128
+    ) -> Dict[str, Any]:
+        """
+        Set RGB LED configuration.
+
+        Args:
+            device: Device path (e.g., "/dev/benchlab0" or "benchlab0")
+            mode: LED mode ("off", "solid", "breathing", "cycle", "temperature")
+            red: Red value (0-255)
+            green: Green value (0-255)
+            blue: Blue value (0-255)
+            brightness: Brightness (0-255, default 128)
+            speed: Animation speed (0-255, default 128)
+
+        Returns:
+            Dictionary with status and RGB settings
+        """
+        device_id = device.replace('/dev/', '')
+        payload = {
+            'mode': mode,
+            'red': red,
+            'green': green,
+            'blue': blue,
+            'brightness': brightness,
+            'speed': speed
+        }
+
+        response = self._request('PUT', f'/devices/{device_id}/rgb', json=payload)
+        return response.json()
+
+    def set_fan_auto(
+        self,
+        device: str,
+        fan_index: int,
+        temp_threshold: float,
+        min_duty: int,
+        max_duty: int,
+        sensor_index: int = 0
+    ) -> Dict[str, Any]:
+        """
+        Set fan to automatic temperature-based control.
+
+        Args:
+            device: Device path (e.g., "/dev/benchlab0" or "benchlab0")
+            fan_index: Fan index (0-8)
+            temp_threshold: Temperature threshold in Celsius
+            min_duty: Minimum PWM duty cycle (0-255)
+            max_duty: Maximum PWM duty cycle (0-255)
+            sensor_index: Temperature sensor to monitor (default 0)
+
+        Returns:
+            Dictionary with status and fan profile
+        """
+        device_id = device.replace('/dev/', '')
+        payload = {
+            'mode': 'auto',
+            'tempThreshold': temp_threshold,
+            'minDuty': min_duty,
+            'maxDuty': max_duty,
+            'sensorIndex': sensor_index
+        }
+
+        response = self._request('PUT', f'/devices/{device_id}/fans/{fan_index}', json=payload)
+        return response.json()
+
+    def get_sensors(self, device: str, timeout: Optional[int] = None) -> SensorReading:
+        """
+        Alias for read_sensors() for compatibility.
+
+        Args:
+            device: Device path (e.g., "/dev/benchlab0" or "benchlab0")
+            timeout: Optional timeout in milliseconds
+
+        Returns:
+            SensorReading object with telemetry data
+        """
+        return self.read_sensors(device, timeout)
+
     def close(self):
         """Close the HTTP session."""
         self.session.close()
