@@ -1,0 +1,9 @@
+# Set calibration data service (applies to RAM)
+# Request: calibration data
+# Response: success status
+
+CalibrationData calibration
+---
+bool success
+string message
+uint8 status_code

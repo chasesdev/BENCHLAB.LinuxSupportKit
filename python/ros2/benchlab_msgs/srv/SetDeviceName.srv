@@ -1,0 +1,8 @@
+# Set device name service
+# Request: name to set (max 32 characters)
+# Response: success status
+
+string name
+---
+bool success
+string message

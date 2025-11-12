@@ -1,0 +1,8 @@
+# Store calibration from RAM to flash
+# Request: empty (no parameters)
+# Response: success status
+
+---
+bool success
+string message
+uint8 status_code

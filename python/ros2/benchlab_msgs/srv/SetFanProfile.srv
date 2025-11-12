@@ -1,0 +1,10 @@
+# Set fan profile service
+# Request: fan index and profile configuration
+# Response: success status
+
+uint8 fan_index       # Fan index (0-8)
+FanProfile profile    # Fan configuration
+---
+bool success
+string message
+uint8 status_code

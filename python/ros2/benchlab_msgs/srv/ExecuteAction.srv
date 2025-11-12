@@ -1,0 +1,9 @@
+# Execute device action
+# Request: action ID (0-255)
+# Response: success status
+
+uint8 action_id
+---
+bool success
+string message
+uint8 status_code

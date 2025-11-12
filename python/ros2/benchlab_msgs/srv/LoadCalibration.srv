@@ -1,0 +1,9 @@
+# Load calibration from flash to RAM
+# Request: empty (no parameters)
+# Response: success status and loaded calibration data
+
+---
+bool success
+string message
+uint8 status_code
+CalibrationData calibration

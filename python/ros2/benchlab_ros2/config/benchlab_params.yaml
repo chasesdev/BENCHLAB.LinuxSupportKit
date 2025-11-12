@@ -1,0 +1,38 @@
+# BenchLab ROS2 Node Parameters
+# This file provides default parameter values for BenchLab nodes.
+
+# Serial Node Parameters
+benchlab_serial_node:
+  ros__parameters:
+    device_path: '/dev/benchlab0'
+    baudrate: 115200
+    timeout: 0.5  # seconds
+    publish_rate: 10.0  # Hz (10ms latency)
+    device_namespace: ''  # Empty = no namespace
+
+# HTTP Node Parameters
+benchlab_http_node:
+  ros__parameters:
+    base_url: 'http://127.0.0.1:8080'
+    api_key: ''  # Set via environment variable or override
+    device_id: 'benchlab0'
+    publish_rate: 10.0  # Hz
+    request_timeout: 2.0  # seconds
+    device_namespace: ''  # Empty = no namespace
+
+# Multi-Device Example (uncomment to use)
+# benchlab_serial_node_0:
+#   ros__parameters:
+#     device_path: '/dev/benchlab0'
+#     baudrate: 115200
+#     timeout: 0.5
+#     publish_rate: 10.0
+#     device_namespace: 'device0'
+#
+# benchlab_serial_node_1:
+#   ros__parameters:
+#     device_path: '/dev/benchlab1'
+#     baudrate: 115200
+#     timeout: 0.5
+#     publish_rate: 10.0
+#     device_namespace: 'device1'

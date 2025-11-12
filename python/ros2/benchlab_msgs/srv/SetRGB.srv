@@ -1,0 +1,9 @@
+# Set RGB LED configuration service
+# Request: RGB configuration
+# Response: success status
+
+RGBConfig config
+---
+bool success
+string message
+uint8 status_code
