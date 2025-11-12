@@ -9,7 +9,9 @@
       "Bash(chmod:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(python3:*)",
+      "Bash(python3 -m py_compile:*)"
     ],
     "deny": [],
     "ask": []
