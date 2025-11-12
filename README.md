@@ -135,6 +135,7 @@ LinuxSupportKit is optimized for high-throughput production environments:
 
 ### Commands
 
+#### Device Discovery & Information
 ```bash
 benchlab-cli list [--timeout ms]
   # List all available BenchLab devices
@@ -142,11 +143,70 @@ benchlab-cli list [--timeout ms]
 benchlab-cli info --device PATH [--timeout ms]
   # Show device information (name, firmware version, vendor data)
 
+benchlab-cli get-uid --device PATH [--timeout ms]
+  # Get device unique identifier (96-bit UID)
+```
+
+#### Telemetry & Streaming
+```bash
 benchlab-cli sensors --device PATH [--timeout ms]
   # Read sensor telemetry (one-shot JSON output)
 
 benchlab-cli stream [--device PATH] [--timeout ms]
   # Stream telemetry data continuously (NDJSON format)
+```
+
+#### Device Configuration
+```bash
+benchlab-cli set-name --device PATH --name "NAME"
+  # Set device name (max 32 characters)
+```
+
+#### RGB LED Control
+```bash
+benchlab-cli get-rgb --device PATH [--timeout ms]
+  # Get RGB LED configuration
+
+benchlab-cli set-rgb --device PATH --mode MODE [--red R] [--green G] [--blue B] [--brightness B] [--speed S]
+  # Set RGB LED mode and colors
+  # Modes: off, solid, breathing, cycle, temperature
+  # Values: 0-255 for colors, brightness, speed
+```
+
+#### Fan Control
+```bash
+benchlab-cli get-fan --device PATH --fan INDEX [--timeout ms]
+  # Get fan profile (INDEX: 0-8)
+
+benchlab-cli set-fan-manual --device PATH --fan INDEX --duty DUTY
+  # Set fan to manual mode with PWM duty cycle (0-255)
+
+benchlab-cli set-fan-auto --device PATH --fan INDEX --temp-threshold TEMP --min-duty MIN --max-duty MAX [--sensor INDEX]
+  # Set fan to automatic mode with temperature control
+  # temp-threshold: Temperature in Celsius
+  # min-duty, max-duty: PWM range (0-255)
+  # sensor: Temperature sensor index (default: 0)
+```
+
+#### Calibration Management
+```bash
+benchlab-cli calibration get --device PATH [--timeout ms]
+  # Read current calibration data from RAM
+
+benchlab-cli calibration load --device PATH [--timeout ms]
+  # Load calibration from flash to RAM
+
+benchlab-cli calibration store --device PATH [--timeout ms]
+  # Save current calibration from RAM to flash
+
+benchlab-cli calibration set --device PATH --json '{"voltageOffsets":[...],...}'
+  # Apply new calibration data to RAM
+```
+
+#### Action Commands
+```bash
+benchlab-cli action --device PATH --action-id ID [--timeout ms]
+  # Execute device action (ID: 0-255)
 
 benchlab-cli write --device PATH --text "DATA"
   # Send ASCII data to device
@@ -155,13 +215,31 @@ benchlab-cli write --device PATH --text "DATA"
 ### Examples
 
 ```bash
-# Auto-discover and stream from first BenchLab device
-benchlab-cli stream
+# Device discovery and info
+benchlab-cli list
+benchlab-cli get-uid --device /dev/benchlab0
 
-# Stream from specific device with 1s timeout
-benchlab-cli stream --device /dev/benchlab0 --timeout 1000
+# Set device name
+benchlab-cli set-name --device /dev/benchlab0 --name "TestRig01"
 
-# Get detailed sensor readings
+# RGB LED control
+benchlab-cli get-rgb --device /dev/benchlab0
+benchlab-cli set-rgb --device /dev/benchlab0 --mode solid --red 255 --green 0 --blue 0 --brightness 128
+benchlab-cli set-rgb --device /dev/benchlab0 --mode temperature  # Auto color based on temp
+
+# Fan control
+benchlab-cli get-fan --device /dev/benchlab0 --fan 0
+benchlab-cli set-fan-manual --device /dev/benchlab0 --fan 0 --duty 128  # 50% speed
+benchlab-cli set-fan-auto --device /dev/benchlab0 --fan 0 --temp-threshold 60.0 --min-duty 64 --max-duty 255
+
+# Calibration workflow
+benchlab-cli calibration load --device /dev/benchlab0      # Load from flash
+benchlab-cli calibration get --device /dev/benchlab0       # Read current values
+benchlab-cli calibration set --device /dev/benchlab0 --json '{"voltageOffsets":[0,0,...]}'  # Modify
+benchlab-cli calibration store --device /dev/benchlab0     # Save to flash
+
+# Telemetry streaming
+benchlab-cli stream --device /dev/benchlab0
 benchlab-cli sensors --device /dev/benchlab0 | jq '.power[] | select(.power > 50)'
 ```
 
@@ -190,37 +268,119 @@ dotnet run --project src/BenchLab.Service
 
 ### API Endpoints
 
+#### Core Service
 | Endpoint | Method | Description | Auth Required |
 |----------|--------|-------------|---------------|
 | `GET /` | GET | Service information | No |
 | `GET /health` | GET | Health check | No |
 | `GET /metrics` | GET | Prometheus metrics | No |
 | `GET /swagger` | GET | API documentation UI | No |
+
+#### Device Discovery & Information
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
 | `GET /devices` | GET | List available devices | Yes |
 | `GET /devices/{id}/info` | GET | Device information | Yes |
+| `GET /devices/{id}/uid` | GET | Get device UID (96-bit unique ID) | Yes |
+
+#### Telemetry & Streaming
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
 | `GET /devices/{id}/sensors` | GET | Sensor telemetry (one-shot) | Yes |
 | `GET /stream?device=...` | GET | Stream telemetry (NDJSON) | Yes |
-| `POST /write` | POST | Write data to device | Yes |
+| `POST /write` | POST | Write ASCII data to device | Yes |
+
+#### Device Configuration
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
+| `PUT /devices/{id}/name` | PUT | Set device name (max 32 chars) | Yes |
+
+#### RGB LED Control
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
+| `GET /devices/{id}/rgb` | GET | Get RGB LED configuration | Yes |
+| `PUT /devices/{id}/rgb` | PUT | Set RGB LED mode and colors | Yes |
+
+#### Fan Control
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
+| `GET /devices/{id}/fans/{fanIndex}` | GET | Get fan profile (0-8) | Yes |
+| `PUT /devices/{id}/fans/{fanIndex}` | PUT | Set fan profile (manual or auto) | Yes |
+
+#### Calibration Management
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
+| `GET /devices/{id}/calibration` | GET | Get calibration data | Yes |
+| `PUT /devices/{id}/calibration` | PUT | Apply calibration to RAM | Yes |
+| `POST /devices/{id}/calibration/load` | POST | Load calibration from flash | Yes |
+| `POST /devices/{id}/calibration/store` | POST | Save calibration to flash | Yes |
+
+#### Action Commands
+| Endpoint | Method | Description | Auth Required |
+|----------|--------|-------------|---------------|
+| `POST /devices/{id}/action` | POST | Execute device action (0-255) | Yes |
 
 ### API Examples
 
 ```bash
-# Without authentication (dev mode)
-curl http://localhost:8080/devices
-curl http://localhost:8080/devices/benchlab0/sensors
-
-# With API key
 export API_KEY="your-secret-key"
-curl -H "Authorization: Bearer $API_KEY" http://localhost:8080/devices
+export BASE_URL="http://localhost:8080"
 
-# Stream telemetry
-curl -H "Authorization: Bearer $API_KEY" http://localhost:8080/stream?device=benchlab0
+# Device discovery and information
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices/benchlab0/info
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices/benchlab0/uid
 
-# Write data
+# Set device name
+curl -X PUT -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"TestRig01"}' \
+  $BASE_URL/devices/benchlab0/name
+
+# RGB LED control
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices/benchlab0/rgb
+curl -X PUT -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"solid","red":255,"green":0,"blue":0,"brightness":128}' \
+  $BASE_URL/devices/benchlab0/rgb
+
+# Fan control
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices/benchlab0/fans/0
+curl -X PUT -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"manual","manualDuty":128}' \
+  $BASE_URL/devices/benchlab0/fans/0
+curl -X PUT -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"auto","tempThreshold":60.0,"minDuty":64,"maxDuty":255,"sensorIndex":0}' \
+  $BASE_URL/devices/benchlab0/fans/0
+
+# Calibration management
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices/benchlab0/calibration
+curl -X POST -H "Authorization: Bearer $API_KEY" \
+  $BASE_URL/devices/benchlab0/calibration/load
+curl -X PUT -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"voltageOffsets":[0,0,0,...],"voltageScales":[1.0,1.0,...],...}' \
+  $BASE_URL/devices/benchlab0/calibration
+curl -X POST -H "Authorization: Bearer $API_KEY" \
+  $BASE_URL/devices/benchlab0/calibration/store
+
+# Execute action
+curl -X POST -H "Authorization: Bearer $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"actionId":1}' \
+  $BASE_URL/devices/benchlab0/action
+
+# Telemetry streaming
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/devices/benchlab0/sensors
+curl -H "Authorization: Bearer $API_KEY" $BASE_URL/stream?device=benchlab0
+
+# Write ASCII data
 curl -X POST -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"device":"/dev/benchlab0","data":"command"}' \
-  http://localhost:8080/write
+  $BASE_URL/write
 ```
 
 ## 🐍 Python SDK

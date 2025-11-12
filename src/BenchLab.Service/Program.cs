@@ -519,6 +519,565 @@ app.MapPost("/write", async (HttpContext ctx) =>
 .WithTags("Devices")
 .WithOpenApi(operation => { operation.Summary = "Write data to device"; return operation; });
 
+// Device Configuration Endpoints
+app.MapPut("/devices/{id}/name", async (string id, [FromBody] SetNameRequest request) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    if (string.IsNullOrEmpty(request.Name))
+    {
+        return Results.BadRequest(new { error = "Name is required" });
+    }
+
+    if (request.Name.Length > 32)
+    {
+        return Results.BadRequest(new { error = "Name must be 32 characters or less" });
+    }
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        await protocol.WriteDeviceNameAsync(request.Name);
+        return Results.Ok(new { status = "ok", name = request.Name });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to set device name");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to set name");
+    }
+})
+.WithName("SetDeviceName")
+.WithTags("Device Configuration")
+.WithOpenApi(operation => { operation.Summary = "Set device name (max 32 chars)"; return operation; });
+
+app.MapGet("/devices/{id}/uid", async (string id) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var uid = await protocol.ReadDeviceUidAsync();
+        return Results.Ok(new
+        {
+            device = devicePath,
+            uid = uid.ToHexString(),
+            uidLow = BitConverter.ToString(uid.UidLow).Replace("-", ""),
+            uidHigh = BitConverter.ToString(uid.UidHigh).Replace("-", "")
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to read device UID");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to read UID");
+    }
+})
+.WithName("GetDeviceUID")
+.WithTags("Device Configuration")
+.WithOpenApi(operation => { operation.Summary = "Get unique device ID (96-bit STM32 UID)"; return operation; });
+
+// RGB LED Control Endpoints
+app.MapGet("/devices/{id}/rgb", async (string id) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var rgb = await protocol.ReadRgbAsync();
+        var modeStr = rgb.Mode switch
+        {
+            0 => "off",
+            1 => "solid",
+            2 => "breathing",
+            3 => "cycle",
+            4 => "temperature",
+            _ => "unknown"
+        };
+
+        return Results.Ok(new
+        {
+            device = devicePath,
+            mode = modeStr,
+            red = rgb.Red,
+            green = rgb.Green,
+            blue = rgb.Blue,
+            brightness = rgb.Brightness,
+            speed = rgb.Speed
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to read RGB settings");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to read RGB");
+    }
+})
+.WithName("GetRGB")
+.WithTags("RGB LED Control")
+.WithOpenApi(operation => { operation.Summary = "Get RGB LED settings"; return operation; });
+
+app.MapPut("/devices/{id}/rgb", async (string id, [FromBody] RgbRequest request) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    if (string.IsNullOrEmpty(request.Mode))
+    {
+        return Results.BadRequest(new { error = "Mode is required (off, solid, breathing, cycle, temperature)" });
+    }
+
+    byte modeValue = request.Mode.ToLower() switch
+    {
+        "off" => 0,
+        "solid" => 1,
+        "breathing" => 2,
+        "cycle" => 3,
+        "temperature" => 4,
+        _ => 255
+    };
+
+    if (modeValue == 255)
+    {
+        return Results.BadRequest(new { error = $"Invalid mode '{request.Mode}'. Valid: off, solid, breathing, cycle, temperature" });
+    }
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        // Read current settings to use as defaults
+        var current = await protocol.ReadRgbAsync();
+
+        var rgb = new RgbStruct
+        {
+            Mode = modeValue,
+            Red = (byte)(request.Red ?? current.Red),
+            Green = (byte)(request.Green ?? current.Green),
+            Blue = (byte)(request.Blue ?? current.Blue),
+            Brightness = (byte)(request.Brightness ?? current.Brightness),
+            Speed = (byte)(request.Speed ?? current.Speed)
+        };
+
+        var status = await protocol.WriteRgbAsync(rgb);
+        return Results.Ok(new
+        {
+            status = status == 0 ? "ok" : $"error {status}",
+            statusCode = status,
+            mode = request.Mode,
+            red = rgb.Red,
+            green = rgb.Green,
+            blue = rgb.Blue,
+            brightness = rgb.Brightness,
+            speed = rgb.Speed
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to set RGB");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to set RGB");
+    }
+})
+.WithName("SetRGB")
+.WithTags("RGB LED Control")
+.WithOpenApi(operation => { operation.Summary = "Set RGB LED configuration"; return operation; });
+
+// Fan Control Endpoints
+app.MapGet("/devices/{id}/fans/{fanIndex:int}", async (string id, int fanIndex) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    if (fanIndex < 0 || fanIndex > 8)
+    {
+        return Results.BadRequest(new { error = "Fan index must be 0-8" });
+    }
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var profile = await protocol.ReadFanProfileAsync((byte)fanIndex);
+        return Results.Ok(new
+        {
+            device = devicePath,
+            fanIndex,
+            mode = profile.Mode == 0 ? "manual" : "auto",
+            manualDuty = profile.ManualDuty,
+            tempThreshold = profile.TempThreshold / 100.0,
+            minDuty = profile.MinDuty,
+            maxDuty = profile.MaxDuty,
+            sensorIndex = profile.SensorIndex
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to read fan profile");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to read fan profile");
+    }
+})
+.WithName("GetFanProfile")
+.WithTags("Fan Control")
+.WithOpenApi(operation => { operation.Summary = "Get fan profile configuration (0-8)"; return operation; });
+
+app.MapPut("/devices/{id}/fans/{fanIndex:int}", async (string id, int fanIndex, [FromBody] FanProfileRequest request) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    if (fanIndex < 0 || fanIndex > 8)
+    {
+        return Results.BadRequest(new { error = "Fan index must be 0-8" });
+    }
+
+    if (string.IsNullOrEmpty(request.Mode))
+    {
+        return Results.BadRequest(new { error = "Mode is required (manual or auto)" });
+    }
+
+    var mode = request.Mode.ToLower();
+    if (mode != "manual" && mode != "auto")
+    {
+        return Results.BadRequest(new { error = "Mode must be 'manual' or 'auto'" });
+    }
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        FanProfileStruct profile;
+
+        if (mode == "manual")
+        {
+            if (!request.ManualDuty.HasValue)
+            {
+                return Results.BadRequest(new { error = "manualDuty is required for manual mode (0-255)" });
+            }
+
+            if (request.ManualDuty.Value < 0 || request.ManualDuty.Value > 255)
+            {
+                return Results.BadRequest(new { error = "manualDuty must be 0-255" });
+            }
+
+            profile = new FanProfileStruct
+            {
+                Mode = 0,
+                ManualDuty = (byte)request.ManualDuty.Value,
+                TempThreshold = 0,
+                MinDuty = 0,
+                MaxDuty = 255,
+                SensorIndex = 0,
+                Reserved = 0
+            };
+        }
+        else // auto
+        {
+            if (!request.TempThreshold.HasValue || !request.MinDuty.HasValue || !request.MaxDuty.HasValue)
+            {
+                return Results.BadRequest(new { error = "tempThreshold, minDuty, and maxDuty are required for auto mode" });
+            }
+
+            if (request.MinDuty.Value < 0 || request.MinDuty.Value > 255)
+            {
+                return Results.BadRequest(new { error = "minDuty must be 0-255" });
+            }
+
+            if (request.MaxDuty.Value < 0 || request.MaxDuty.Value > 255)
+            {
+                return Results.BadRequest(new { error = "maxDuty must be 0-255" });
+            }
+
+            profile = new FanProfileStruct
+            {
+                Mode = 1,
+                ManualDuty = 0,
+                TempThreshold = (short)(request.TempThreshold.Value * 100),
+                MinDuty = (byte)request.MinDuty.Value,
+                MaxDuty = (byte)request.MaxDuty.Value,
+                SensorIndex = (byte)(request.SensorIndex ?? 0),
+                Reserved = 0
+            };
+        }
+
+        var status = await protocol.WriteFanProfileAsync((byte)fanIndex, profile);
+        return Results.Ok(new
+        {
+            status = status == 0 ? "ok" : $"error {status}",
+            statusCode = status,
+            fanIndex,
+            mode,
+            profile = mode == "manual"
+                ? (object)new { manualDuty = profile.ManualDuty }
+                : new { tempThreshold = profile.TempThreshold / 100.0, minDuty = profile.MinDuty, maxDuty = profile.MaxDuty, sensorIndex = profile.SensorIndex }
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to set fan profile");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to set fan profile");
+    }
+})
+.WithName("SetFanProfile")
+.WithTags("Fan Control")
+.WithOpenApi(operation => { operation.Summary = "Set fan profile (manual or auto mode)"; return operation; });
+
+// Calibration Management Endpoints
+app.MapGet("/devices/{id}/calibration", async (string id) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        unsafe
+        {
+            var cal = await protocol.ReadCalibrationAsync();
+            return Results.Ok(new
+            {
+                device = devicePath,
+                voltageOffsets = cal.VoltageOffsets,
+                voltageScales = cal.VoltageScales,
+                tempOffset = cal.TempOffset,
+                tempScale = cal.TempScale,
+                currentOffsets = cal.CurrentOffsets,
+                currentScales = cal.CurrentScales,
+                flags = cal.Flags
+            });
+        }
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to read calibration");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to read calibration");
+    }
+})
+.WithName("GetCalibration")
+.WithTags("Calibration")
+.WithOpenApi(operation => { operation.Summary = "Get calibration data from device RAM"; return operation; });
+
+app.MapPut("/devices/{id}/calibration", async (string id, [FromBody] CalibrationStruct cal) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var status = await protocol.WriteCalibrationAsync(cal);
+        return Results.Ok(new
+        {
+            status = status == 0 ? "ok - calibration applied (use POST /devices/{id}/calibration/store to persist)" : $"error {status}",
+            statusCode = status
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to write calibration");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to write calibration");
+    }
+})
+.WithName("SetCalibration")
+.WithTags("Calibration")
+.WithOpenApi(operation => { operation.Summary = "Apply calibration data to device RAM (not persisted until stored)"; return operation; });
+
+app.MapPost("/devices/{id}/calibration/load", async (string id) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var status = await protocol.LoadCalibrationAsync();
+        var statusMsg = status switch
+        {
+            0 => "ok - calibration loaded from flash",
+            1 => "warning - no calibration stored in flash",
+            _ => $"error {status}"
+        };
+
+        return Results.Ok(new { status = statusMsg, statusCode = status });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to load calibration");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to load calibration");
+    }
+})
+.WithName("LoadCalibration")
+.WithTags("Calibration")
+.WithOpenApi(operation => { operation.Summary = "Load calibration from device flash to RAM"; return operation; });
+
+app.MapPost("/devices/{id}/calibration/store", async (string id) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var status = await protocol.StoreCalibrationAsync();
+        var statusMsg = status == 0 ? "ok - calibration saved to flash" : $"error {status} - flash write failed";
+
+        return Results.Ok(new { status = statusMsg, statusCode = status });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to store calibration");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to store calibration");
+    }
+})
+.WithName("StoreCalibration")
+.WithTags("Calibration")
+.WithOpenApi(operation => { operation.Summary = "Save calibration from RAM to device flash (persistent)"; return operation; });
+
+// Action Command Endpoint
+app.MapPost("/devices/{id}/action", async (string id, [FromBody] ActionRequest request) =>
+{
+    var devicePath = NormalizeDevicePath(id);
+    var commandTimeout = TimeSpan.FromMilliseconds(commandTimeoutMs);
+
+    if (!request.ActionId.HasValue)
+    {
+        return Results.BadRequest(new { error = "actionId is required (0-255)" });
+    }
+
+    if (request.ActionId.Value < 0 || request.ActionId.Value > 255)
+    {
+        return Results.BadRequest(new { error = "actionId must be 0-255" });
+    }
+
+    try
+    {
+        using var sp = SerialPortAdapter.Open(devicePath, 115200, commandTimeout, commandTimeout, dtr: true, rts: true);
+        var protocol = new BinaryProtocol(sp, commandTimeout);
+
+        var status = await protocol.ExecuteActionAsync((byte)request.ActionId.Value);
+        return Results.Ok(new
+        {
+            status = status == 0 ? "ok" : $"error {status}",
+            statusCode = status,
+            actionId = request.ActionId.Value
+        });
+    }
+    catch (UnauthorizedAccessException)
+    {
+        return Results.Problem(detail: "Access denied to device", statusCode: 403, title: "Access Denied");
+    }
+    catch (FileNotFoundException ex)
+    {
+        return Results.NotFound(new { error = "Device not found", detail = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Failed to execute action");
+        return Results.Problem(detail: ex.Message, statusCode: 500, title: "Failed to execute action");
+    }
+})
+.WithName("ExecuteAction")
+.WithTags("Actions")
+.WithOpenApi(operation => { operation.Summary = "Execute device action command"; return operation; });
+
 // Log configuration on startup
 logger.LogInformation("BenchLab HTTP Service starting");
 logger.LogInformation("Bind address: {BindAddress}", bindAddress);
@@ -540,6 +1099,10 @@ if (bindAddress.Contains("0.0.0.0"))
 app.Run(bindAddress);
 
 record WriteRequest(string Device, string Data);
+record SetNameRequest(string Name);
+record RgbRequest(string Mode, int? Red, int? Green, int? Blue, int? Brightness, int? Speed);
+record FanProfileRequest(string Mode, int? ManualDuty, double? TempThreshold, int? MinDuty, int? MaxDuty, int? SensorIndex);
+record ActionRequest(int? ActionId);
 
 // Helper methods for streaming optimization
 static object[] BuildPowerArray(PowerSensor[] powerBuffer)
