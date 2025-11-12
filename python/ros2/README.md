@@ -1,6 +1,15 @@
 # BenchLab ROS2 Integration
 
-**Production-ready ROS2 support for BenchLab devices with structured messages, services, and lifecycle management.**
+**⚠️ Status: Beta - Untested with Hardware**
+
+Complete ROS2 implementation (1,692 lines of code) with production-grade architecture. **Requires hardware validation before production use.**
+
+- ✅ No stubs or mocks - all features fully implemented
+- ⚠️ Never tested with real BenchLab hardware
+- ⚠️ Performance claims are estimates, not measurements
+- ⚠️ 3 bugs fixed (AttributeError in service handlers)
+
+See [`VALIDATION_STATUS.md`](./VALIDATION_STATUS.md) for detailed assessment and required work.
 
 ## Overview
 

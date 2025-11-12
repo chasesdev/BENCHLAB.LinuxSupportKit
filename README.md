@@ -35,7 +35,7 @@ This project implements the **complete BenchLab binary protocol** (all 15 comman
 - ✅ High-performance discovery (parallel probing with 60s cache, 5-10x faster)
 - ✅ Zero-allocation streaming (70-80% reduction using ArrayPool and Span<T>)
 - ✅ Lock-free concurrent metrics (ConcurrentDictionary + Interlocked operations)
-- ✅ Production-grade ROS2 integration (structured messages, lifecycle nodes, <10ms latency)
+- ⚠️ Complete ROS2 integration (structured messages, lifecycle nodes, dual modes) - **validation with hardware pending**
 - ✅ 126 unit/integration tests with concurrent stress testing
 
 **Active Development**:
@@ -473,7 +473,21 @@ See `deploy/kubernetes/` for Helm charts and manifests (TODO).
 
 ## 🤖 ROS2 Integration
 
-**Production-ready ROS2 support with structured messages, services, and lifecycle management.**
+**⚠️ Status: Beta - Requires Testing & Validation**
+
+Complete ROS2 implementation with production-grade architecture. **Never tested with hardware** - requires validation before production use.
+
+- ✅ All 15 protocol commands implemented (no stubs/mocks)
+- ✅ Production architecture patterns (lifecycle nodes, QoS, diagnostics)
+- ✅ Comprehensive documentation
+- ⚠️ 3 minor bugs fixed (AttributeError in service handlers)
+- ❌ Zero test coverage (0%)
+- ❌ Never validated with real BenchLab hardware
+- ❌ Performance claims unverified
+
+**Estimated time to production-ready**: 7-11 days (testing + validation + bug fixes)
+
+See `python/ros2/VALIDATION_STATUS.md` for detailed status and required work.
 
 ### Features
 

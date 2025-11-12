@@ -30,7 +30,12 @@ from benchlab_msgs.srv import (
     LoadCalibration, StoreCalibration, ExecuteAction
 )
 
-from .binary_protocol import BinaryProtocol
+from .binary_protocol import (
+    BinaryProtocol,
+    FanProfile as FanProfileProto,
+    RgbConfig as RgbConfigProto,
+    CalibrationData as CalibrationDataProto
+)
 import traceback
 
 
@@ -378,7 +383,7 @@ class BenchLabSerialNode(LifecycleNode):
         """Handle set fan profile service."""
         try:
             # Convert ROS2 message to protocol struct
-            profile_proto = self.protocol.FanProfile(
+            profile_proto = FanProfileProto(
                 mode=request.profile.mode,
                 manual_duty=request.profile.manual_duty,
                 temp_threshold=int(request.profile.temp_threshold_c * 100),
@@ -401,7 +406,7 @@ class BenchLabSerialNode(LifecycleNode):
     def _handle_set_rgb(self, request, response):
         """Handle set RGB service."""
         try:
-            config_proto = self.protocol.RgbConfig(
+            config_proto = RgbConfigProto(
                 mode=request.config.mode,
                 red=request.config.red,
                 green=request.config.green,
@@ -425,7 +430,7 @@ class BenchLabSerialNode(LifecycleNode):
     def _handle_set_calibration(self, request, response):
         """Handle set calibration service."""
         try:
-            cal_proto = self.protocol.CalibrationData(
+            cal_proto = CalibrationDataProto(
                 voltage_offsets=list(request.calibration.voltage_offsets_mv),
                 voltage_scales=list(request.calibration.voltage_scales),
                 temp_offset=request.calibration.temp_offset,
